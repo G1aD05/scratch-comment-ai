@@ -33,6 +33,8 @@ commands = WordCompleter([
     "reply",
     "help",
     "switch_project",
+    "mode",
+    "stop"
 ])
 
 warnings.filterwarnings('ignore', category=LoginDataWarning)
@@ -40,15 +42,15 @@ warnings.filterwarnings('ignore', category=LoginDataWarning)
 # Account info
 BOT = "bot username"
 PASSWORD = "bot password"
-HOLDER = "your username"
+HOLDER = "bot username"
 
 ID = 1367060690 if len(sys.argv) >= 1 else int(sys.argv[1])
-
 CHATS = {}
 
 SPECIAL_TOOLS = ["read", "time", "search"]
-
 SHUTDOWN = Event()
+
+MODE = 'release'
 
 with open("blacklist.json", 'r') as file:
     BLACKLIST = json.load(file)
@@ -276,6 +278,8 @@ def ask(prompt):
 
 
 def safe_post(message, parent_id, *, commentee_id=''):
+    print(message, parent_id)
+
     if session.mute_status is not None:
         print("[red]Failed to post comment: has mute[/]")
         return None
@@ -417,7 +421,7 @@ def scan_thread(comment_id: int, initiator_message: str):
 
                         comment_response = safe_post(
                             response_dict["message"],
-                            reply.id,
+                            comment_id,
                             commentee_id=reply.author_id
                         )
 
@@ -426,7 +430,7 @@ def scan_thread(comment_id: int, initiator_message: str):
 
                         comment_response = safe_post(
                             response_dict["message"],
-                            reply.id,
+                            comment_id,
                             commentee_id=reply.author_id
                         )
 
@@ -582,6 +586,12 @@ def check_prompt(response: str):
                 arguments[1]
             )
 
+        elif response == "mode":
+            print(f"Mode: [bold]{MODE}[/]")
+
+        elif response == "stop":
+            SHUTDOWN.set()
+
     except Exception as error:
         user.set_bio(
             f"This is the most recent error, you can use this to find out why the bot didn't respond:\n{error}")
@@ -627,7 +637,11 @@ if __name__ == "__main__":
                 print("[dim]New comment[/]")
 
                 try:
-                    check_message(content)
+                    if MODE == 'dev':
+                        if latest_comment.author_name == HOLDER:
+                            check_message(content)
+                    elif MODE == 'release':
+                        check_message(content)
                 except Exception:
                     traceback.print_exc()
 
@@ -641,3 +655,4 @@ if __name__ == "__main__":
             "Is the script online? No\nGitHub URL for this project:\nhttps://github.com/G1aD05/scratch-comment-ai"
         )
         exit()
+
