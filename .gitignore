@@ -1,5 +1,9 @@
-./blacklist.json
-./comment_data.json
-./uv.lock
-./ban_check.py
-./main.py
+blacklist.json
+comment_data.json
+uv.lock
+ban_check.py
+main.py
+.idea/
+__pycache__/
+.DS_Store
+.venv/
