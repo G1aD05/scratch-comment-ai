@@ -410,8 +410,7 @@ def scan_thread(comment_id: int, initiator_message: str):
 
                         comment_response = safe_post(
                             response_dict["message"],
-                            reply.id,
-                            commentee_id=reply.author_id
+                            reply.id
                         )
 
                     else:
@@ -419,8 +418,7 @@ def scan_thread(comment_id: int, initiator_message: str):
 
                         comment_response = safe_post(
                             response_dict["message"],
-                            reply.id,
-                            commentee_id=reply.author_id
+                            reply.id
                         )
 
                     # Append the model's response to chat history
