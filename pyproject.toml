@@ -1,0 +1,15 @@
+[project]
+name = "comment-ai"
+version = "0.1.0"
+description = "Add your description here"
+requires-python = ">=3.12"
+dependencies = [
+    "ollama>=0.6.2",
+    "prompt-toolkit>=3.0.53",
+    "requests[socks]>=2.34.2",
+    "rich>=15.0.0",
+    "ruff>=0.16.5",
+    "scratchattach>=2.2.1",
+    "stem>=1.8.2",
+    "tavily>=1.1.0",
+]
