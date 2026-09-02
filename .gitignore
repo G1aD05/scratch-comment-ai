@@ -1,5 +1,5 @@
-blacklist.json
-comment_data.json
-uv.lock
-ban_check.py
-main.py
+./blacklist.json
+./comment_data.json
+./uv.lock
+./ban_check.py
+./main.py
