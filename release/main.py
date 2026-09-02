@@ -1,22 +1,22 @@
 import html
 import json
 import os
-import sys
 import re
+import sys
 import time
-import warnings
 import traceback
-from threading import Event, Thread
+import warnings
 from datetime import datetime
+from threading import Event, Thread
 
 import scratchattach as sa
 from ollama import Client
+from prompt_toolkit import PromptSession
+from prompt_toolkit.completion import WordCompleter
+from prompt_toolkit.patch_stdout import patch_stdout
 from rich.console import Console
 from scratchattach import Comment, LoginDataWarning
 from scratchattach.utils.exceptions import CommentPostFailure
-from prompt_toolkit.patch_stdout import patch_stdout
-from prompt_toolkit import PromptSession
-from prompt_toolkit.completion import WordCompleter
 
 TAVILY_ENABLED = False
 try:
@@ -42,7 +42,7 @@ warnings.filterwarnings('ignore', category=LoginDataWarning)
 # Account info
 BOT = "bot username"
 PASSWORD = "bot password"
-HOLDER = "bot username"
+HOLDER = "your username"
 
 ID = 1367060690 if len(sys.argv) >= 1 else int(sys.argv[1])
 CHATS = {}
@@ -560,7 +560,7 @@ def check_prompt(response: str):
         elif response.startswith("list"):
             comments = project.comments(limit=10)
             for comment in comments:
-                print(f"{(comment.author_name + ' ').ljust(25, '━')} ID: {str(comment.id)} Content: {comment.content}")
+                print(f"{(comment.author_name + ' ').ljust(25, '━')} ID: {comment.id!s} Content: {comment.content}")
 
         elif response.startswith("reply"):
             arguments = response.split()
@@ -607,7 +607,7 @@ def input_loop():
                 check_prompt(message)
     except KeyboardInterrupt:
         SHUTDOWN.set()
-        exit()
+        sys.exit()
 
 
 if __name__ == "__main__":
@@ -654,5 +654,4 @@ if __name__ == "__main__":
         user.set_wiwo(
             "Is the script online? No\nGitHub URL for this project:\nhttps://github.com/G1aD05/scratch-comment-ai"
         )
-        exit()
-
+        sys.exit()
