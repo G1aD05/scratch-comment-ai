@@ -6,3 +6,4 @@ ban_check.py
 __pycache__/
 .DS_Store
 .venv/
+main.py
