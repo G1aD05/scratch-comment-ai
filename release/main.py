@@ -687,7 +687,7 @@ if __name__ == "__main__":
                 })
 
                 with open("comment_data.json", 'w') as file:
-                    json.dump(comment_data, file)
+                    json.dump(comment_data, file, indent=2)
 
                 print("[dim]New comment[/]")
 
