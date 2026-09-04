@@ -1,0 +1,11 @@
+{
+  "host": "https://ollama.com/",
+  "model": "gpt-oss:120b",
+  "mode": "release",
+  "id": 1376616043,
+  "account": {
+    "username": "bot username",
+    "password": "bot password"
+  },
+  "holder": "your username"
+}
