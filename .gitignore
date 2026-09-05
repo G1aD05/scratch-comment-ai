@@ -9,3 +9,4 @@ __pycache__/
 main.py
 personality
 config.json
+src/

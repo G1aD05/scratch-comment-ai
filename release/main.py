@@ -15,8 +15,14 @@ from prompt_toolkit import PromptSession
 from prompt_toolkit.completion import WordCompleter
 from prompt_toolkit.patch_stdout import patch_stdout
 from rich.console import Console
-from scratchattach import Comment, LoginDataWarning
+from scratchattach import Comment, LoginDataWarning, Session, Project
 from scratchattach.utils.exceptions import CommentPostFailure
+
+
+# Custom exception for an invalid mode
+class InvalidMode(Exception):
+    pass
+
 
 TAVILY_ENABLED = False
 try:
@@ -46,8 +52,6 @@ with open("config.json", 'r') as file:
     config = json.load(file)
     args = sys.argv
     # Account info
-    BOT: str = config["account"]["username"]
-    PASSWORD: str = config["account"]["password"]
     HOLDER: str = config["holder"]
 
     # Project ID, either set with config or an argument in the command line
@@ -58,6 +62,19 @@ with open("config.json", 'r') as file:
     # Model and host, what model it uses and what is the provider
     MODEL: str = config["model"]
     HOST: str = config["host"]
+    THINKING: bool = config["thinking"]
+
+    # Account rotation
+    ROTATE: bool = config["rotate"]
+
+    # Accounts
+    ACCOUNTS = config["accounts"]
+
+    # This is for testing, set to 'dev' if you only want the holder to use the bot and get more detailed errors
+    if config["mode"] in ['dev', 'release']:
+        MODE: str = config["mode"]
+    else:
+        raise InvalidMode("An invalid mode for the script was set, please choose 'dev' or 'release'")
 
 # Users that aren't allowed to use the bot
 with open("blacklist.json", 'r') as file:
@@ -71,8 +88,8 @@ SPECIAL_TOOLS: list = ["read", "time", "search"]
 # Shutdown event, when the user presses ctrl+c this is set and the entire script stops
 SHUTDOWN: Event = Event()
 
-# This is for testing, set to 'dev' if you only want the holder to use the bot and get more detailed errors
-MODE: str = 'release'
+# How the index of which account should be used next
+ACCOUNT_USE_INDEX = 0
 
 # Rich's text output
 console = Console(
@@ -94,12 +111,46 @@ client = Client(
 )
 
 # Scratch user session and project
-session = sa.login(BOT, PASSWORD)
+session = sa.login(ACCOUNTS[0]["username"], ACCOUNTS[0]["password"])
 project = session.connect_project(ID)
 
 # Set the bot's "What I'm Working On" to "Is the script online?"
-user = session.connect_user(BOT)
+user = session.connect_user(ACCOUNTS[0]["username"])
 user.set_wiwo("Is the script online?\nYes\n\nGitHub:\nhttps://github.com/G1aD05/scratch-comment-ai")
+
+
+# Account rotation
+def rotate() -> Session:
+    global user, session, ACCOUNT_USE_INDEX
+
+    # Check if account rotation is enabled
+    if ROTATE:
+        username = session.username
+        check_user: Session = session
+
+        if len(ACCOUNTS) <= ACCOUNT_USE_INDEX:
+            ACCOUNT_USE_INDEX = 0
+
+        for i, account in enumerate(ACCOUNTS):
+            if account["username"] == username:
+                continue  # Skip account
+
+            if i <= ACCOUNT_USE_INDEX:
+                continue  # Skip account that has been used
+
+            check_user = sa.login(account["username"], account["password"])
+
+            if check_user.mute_status:
+                continue  # Skip account with mute status
+
+            break  # Break the loop once the requirements are met
+
+        # If requirements are not met it will just return the original session
+        user = check_user.connect_user(check_user.username)
+        return check_user
+    else:
+        return session
+
 
 # Information for the AI
 information = {
@@ -112,6 +163,11 @@ information = {
     "url": lambda: project.url,
     "author": lambda: project.author_name,
 }
+
+project_information = '\n'.join(
+    f"{key}: {value()}"
+    for key, value in information.items()
+)
 
 # System message, change if you want but keep the tools and the json message format
 system_message = f"""
@@ -151,8 +207,7 @@ time -- Give you the date and time of day
 (
     "search -- Search the web for information. MUST be used when you do not know the answer, are unsure about a term/"
     "topic, or the user asks about something unfamiliar. Do not guess when web search can resolve the uncertainty."
-)
-if TAVILY_ENABLED else ''
+) if TAVILY_ENABLED else ''
 }
 
 The read tool does NOT post, reply to, delete, or modify any comments. It only retrieves information for you to analyze.
@@ -305,14 +360,15 @@ def chat(history: list):
             "role": "system",
             "content": "[ Project Information ]"
                        "The following information is context about the project. Do not associate the user with any of it unless they explicitly ask about it."
-                       f"{information}"
+                       f"{project_information}"
         },
         *history
     ]
 
     response = client.chat(
         MODEL,
-        messages=messages
+        messages=messages,
+        think=THINKING
     )
 
     return response["message"]["content"]
@@ -321,16 +377,18 @@ def chat(history: list):
 # Ask the AI to generate content
 def ask(prompt):
     system_prompt = (
-        f"{system_message}"
-        "[ Project Information ]"
-        "The following information is context about the project. Do not associate the user with any of it unless they explicitly ask about it."
-        f"{information}"
+        f"{system_message}\n\n"
+        "[ Project Information ]\n"
+        "The following information is context about the project. "
+        "Do not associate the user with any of it unless they explicitly ask about it.\n\n"
+        f"{project_information}"
     )
 
     response = client.generate(
         MODEL,
         prompt,
-        system=system_prompt
+        system=system_prompt,
+        think=THINKING
     )
 
     return response["response"]
@@ -338,6 +396,12 @@ def ask(prompt):
 
 # Safely post a comment to scratch
 def safe_post(message, parent_id, *, commentee_id=''):
+    global session, project, user
+
+    session = rotate()
+    project = session.connect_project(ID)
+    user = session.connect_user(session.username)
+
     if session.mute_status is not None:
         print("[red]Failed to post comment: has mute[/]")
         return None
@@ -579,9 +643,16 @@ def check_message(content: str):
             json.dump(BLACKLIST, file)
 
     elif content.startswith("!switch_project"):
+        global ID, project
+
+        # Separate the id form the URL
         url = content.split()[1]
         project_id = ''.join([num if num.isdigit() else '' for num in url])
-        project = session.connect_project(int(project_id))
+
+        # Set project to new project
+        ID = int(project_id)
+        project = session.connect_project(ID)
+
         print(f"[bold green]Switched project to \"{project.title}\"[/]")
 
 
@@ -606,9 +677,16 @@ def check_prompt(response: str):
                 json.dump(BLACKLIST, file)
 
         elif response.startswith("switch_project"):
+            global ID, project
+
+            # Separate the ID from the URL
             url = response.split()[1]
             project_id = ''.join([num if num.isdigit() else '' for num in url])
-            project = session.connect_project(int(project_id))
+
+            # Set ID to the new id and project to ID
+            ID = int(project_id)
+            project = session.connect_project(ID)
+
             print(f"[bold green]Switched project to \"{project.title}\"[/]")
 
         elif response.startswith("list"):
@@ -683,7 +761,9 @@ if __name__ == "__main__":
                     "author": latest_comment.author_name,
                     "content": content,
                     "timestamp": datetime.now().strftime("%H:%M:%S"),
-                    "id": latest_comment.id
+                    "date": datetime.now().strftime("%m/%d/%Y"),
+                    "id": latest_comment.id,
+                    "project": ID
                 })
 
                 with open("comment_data.json", 'w') as file:
@@ -697,8 +777,8 @@ if __name__ == "__main__":
                             check_message(content)
                     elif MODE == 'release':
                         check_message(content)
-                except Exception:
-                    print_exc()
+                except Exception as error:
+                    print_exc(info="Unknown exception occurred", error=error)
 
             blacklist.add(latest_comment.id)
 

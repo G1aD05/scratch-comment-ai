@@ -56,3 +56,17 @@ Tavily does have a free plan so you don't have to pay for this feature.
 5. reply: Reply to a comment, args: `comment id`, `content`
 6. help: Opens a help menu
 7. stop: Stops the script
+
+## How to Use Account Rotation
+Go to `config.json` and add as many accounts as you want to the `accounts` list \
+Format it like this:
+```json
+accounts: [
+  {
+    "username": "bot username",
+    "password": "bot password"
+  }
+]
+```
+
+Then find `rotate` and set it to `true`
