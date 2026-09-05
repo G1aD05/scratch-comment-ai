@@ -1,0 +1,19 @@
+{
+  "host": "https://ollama.com/",
+  "model": "gpt-oss:120b",
+  "thinking": false,
+  "mode": "dev",
+  "id": 1376616043,
+  "accounts": [
+    {
+      "username": "s94357",
+      "password": "s12345"
+    },
+    {
+      "username": "s94368",
+      "password": "s12345"
+    }
+  ],
+  "holder": "qwerty-eats",
+  "rotate": false
+}
