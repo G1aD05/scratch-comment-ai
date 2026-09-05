@@ -33,7 +33,6 @@ scratchattach==2.2.1
 simplewebsocketserver==0.1.2
 soupsieve==2.9.1
 stem==1.8.2
-tavily==1.1.0
 typing-extensions==4.16.0
 typing-inspection==0.4.2
 urllib3==2.7.0

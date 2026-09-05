@@ -31,6 +31,8 @@ If you do not want to enable cloud usage then go to `config.json` and change `ho
 You can also use local IP addresses like `http://192.168.1.7:11434`
 
 ### Enabling Web Search
+First you need to install the package so run `uv add tavily` or `python3 -m pip install tavily`
+
 Go to [Tavily](https://app.tavily.com/home) and look for `API Keys`, once you have found it click the `+` button, name the key and click `Create` \
 Copy the key and run this command `export TAVILY_API_KEY=tavily api key` \
 \
