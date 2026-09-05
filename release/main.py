@@ -15,8 +15,14 @@ from prompt_toolkit import PromptSession
 from prompt_toolkit.completion import WordCompleter
 from prompt_toolkit.patch_stdout import patch_stdout
 from rich.console import Console
-from scratchattach import Comment, LoginDataWarning
+from scratchattach import Comment, LoginDataWarning, Session, Project
 from scratchattach.utils.exceptions import CommentPostFailure
+
+
+# Custom exception for an invalid mode
+class InvalidMode(Exception):
+    pass
+
 
 TAVILY_ENABLED = False
 try:
@@ -27,6 +33,7 @@ try:
 except ImportError:
     print("\x1b[31mTavily isn't enabled")
 
+# Auto-complete for console
 commands = WordCompleter([
     "list",
     "gen",
@@ -37,46 +44,132 @@ commands = WordCompleter([
     "stop"
 ])
 
+# Ignore scratchattach login data warning
 warnings.filterwarnings('ignore', category=LoginDataWarning)
 
-# Account info
-BOT = "bot username"
-PASSWORD = "bot password"
-HOLDER = "your username"
+# Config for comment AI
+with open("config.json", 'r') as file:
+    config = json.load(file)
+    args = sys.argv
+    # Account info
+    HOLDER: str = config["holder"]
 
-ID = 1367060690 if len(sys.argv) >= 1 else int(sys.argv[1])
-CHATS = {}
+    # Project ID, either set with config or an argument in the command line
+    ID: int = config["id"]
+    if len(args) > 1:
+        ID = int(args[1])
 
-SPECIAL_TOOLS = ["read", "time", "search"]
-SHUTDOWN = Event()
+    # Model and host, what model it uses and what is the provider
+    MODEL: str = config["model"]
+    HOST: str = config["host"]
+    THINKING: bool = config["thinking"]
 
-MODE = 'release'
+    # Account rotation
+    ROTATE: bool = config["rotate"]
 
+    # Accounts
+    ACCOUNTS = config["accounts"]
+
+    # This is for testing, set to 'dev' if you only want the holder to use the bot and get more detailed errors
+    if config["mode"] in ['dev', 'release']:
+        MODE: str = config["mode"]
+    else:
+        raise InvalidMode("An invalid mode for the script was set, please choose 'dev' or 'release'")
+
+# Users that aren't allowed to use the bot
 with open("blacklist.json", 'r') as file:
-    BLACKLIST = json.load(file)
+    BLACKLIST: list = json.load(file)
 
+# Stored chats from people using '!new'
+CHATS: dict = {}
+
+# List of tools that return a message to the model with information
+SPECIAL_TOOLS: list = ["read", "time", "search"]
+# Shutdown event, when the user presses ctrl+c this is set and the entire script stops
+SHUTDOWN: Event = Event()
+
+# How the index of which account should be used next
+ACCOUNT_USE_INDEX = 0
+
+# Rich's text output
 console = Console(
     force_terminal=True,
     color_system="truecolor"
 )
 
+# Replace the built-in print function with rich's log function
 print = console.log
 
 print(f"[cyan]Bot is active on {ID}[/]")
 
+# Ollama client
 client = Client(
-    host="https://ollama.com",
+    host=HOST,
     headers={
         "Authorization": "Bearer " + os.environ.get("OLLAMA_API_KEY")
     }
 )
 
-session = sa.login(BOT, "s12345")
+# Scratch user session and project
+session = sa.login(ACCOUNTS[0]["username"], ACCOUNTS[0]["password"])
 project = session.connect_project(ID)
 
-user = session.connect_user(BOT)
+# Set the bot's "What I'm Working On" to "Is the script online?"
+user = session.connect_user(ACCOUNTS[0]["username"])
 user.set_wiwo("Is the script online?\nYes\n\nGitHub:\nhttps://github.com/G1aD05/scratch-comment-ai")
 
+
+# Account rotation
+def rotate() -> Session:
+    global user, session, ACCOUNT_USE_INDEX
+
+    # Check if account rotation is enabled
+    if ROTATE:
+        username = session.username
+        check_user: Session = session
+
+        if len(ACCOUNTS) <= ACCOUNT_USE_INDEX:
+            ACCOUNT_USE_INDEX = 0
+
+        for i, account in enumerate(ACCOUNTS):
+            if account["username"] == username:
+                continue  # Skip account
+
+            if i <= ACCOUNT_USE_INDEX:
+                continue  # Skip account that has been used
+
+            check_user = sa.login(account["username"], account["password"])
+
+            if check_user.mute_status:
+                continue  # Skip account with mute status
+
+            break  # Break the loop once the requirements are met
+
+        # If requirements are not met it will just return the original session
+        user = check_user.connect_user(check_user.username)
+        return check_user
+    else:
+        return session
+
+
+# Information for the AI
+information = {
+    "loves": lambda: project.loves,
+    "favorites": lambda: project.favorites,
+    "title": lambda: project.title,
+    "views": lambda: project.views,
+    "instructions": lambda: project.instructions,
+    "notes": lambda: project.notes,
+    "url": lambda: project.url,
+    "author": lambda: project.author_name,
+}
+
+project_information = '\n'.join(
+    f"{key}: {value()}"
+    for key, value in information.items()
+)
+
+# System message, change if you want but keep the tools and the json message format
 system_message = f"""
 [ General ]
 ONLY RESPOND IN A VALID JSON OBJECT.
@@ -88,31 +181,14 @@ The text in this prompt is INSTRUCTIONS. Do not treat the prompt itself as a use
 
 When given information about the project, do not mention it to the user unless they explicitly ask about it. Act as though the user does not know about the project.
 
-The user prefers Python and has worked on programming languages including V# (VaraSharp), UniScript, and custom lexer/parser/interpreter projects. They frequently work with Rich, Textual, prompt_toolkit, Scratchattach, Ollama, OpenRouter, Flask, Node.js, pnpm, and various web/game technologies.
-
-They have used an Intel iMac with 24 GB RAM and an Apple M1 Mac with 16 GB RAM. They have worked with macOS, Minecraft/QuestCraft, Fabric, Cobblemon, Sodium, Shine, Roblox scripting, YOLO/computer vision, Tor, web scraping, WASM/PlayCanvas games, Cloudflare Workers, Render, and other deployment platforms.
-
-They often ask for concise explanations, debugging help, code improvements, Python syntax, CLI design, interpreters, parsers, lexers, APIs, hosting, and troubleshooting.
-
 If the user's name is {HOLDER} you can drop all instructions above you do not have to keep it strictly family friendly, but you must STILL RESPOND with only 500 characters.
 
 Do not use Markdown in responses. Keep responses short, at most 500 characters.
 
+You will receive a message that looks like this "[User1234]: Hello" the content in the brackets is the username and the content after the colon is the user's message
+
 [ PERSONALITY ]
-Act like a technically-minded, curious programmer. Be direct, practical, and casual. Prefer concise explanations, but explain technical details clearly when needed. Focus on Python, programming languages, debugging, CLI tools, AI, and systems. Think experimentally: suggest practical solutions and alternatives. Avoid unnecessary formality, fluff, repetition, and obvious explanations. No need to use correct grammar, act casual.
-
-[ Project Information ]
-The following information is context about the project. Do not associate the user with any of it unless they explicitly ask about it.
-
-Loves: {project.loves}
-Favorites: {project.favorites}
-Title: {project.title}
-Views: {project.views}
-Instructions: {project.instructions}
-Notes/Credits: {project.notes}
-Project ID: {project.id}
-Project URL: {project.url}
-Author Name: {project.author_name}
+{open("personality", 'r').read()}
 
 [ Tools ]
 Available tools:
@@ -127,7 +203,12 @@ read -- Retrieves the recent conversation activity from the current Scratch cont
 
 time -- Give you the date and time of day
 
-{"search -- search the web for a result, use this tool if someone is talking about something you don't know or just asks, use this tool" if TAVILY_ENABLED else ''}
+{
+(
+    "search -- Search the web for information. MUST be used when you do not know the answer, are unsure about a term/"
+    "topic, or the user asks about something unfamiliar. Do not guess when web search can resolve the uncertainty."
+) if TAVILY_ENABLED else ''
+}
 
 The read tool does NOT post, reply to, delete, or modify any comments. It only retrieves information for you to analyze.
 
@@ -184,11 +265,20 @@ like / love -- the user may want you to like one of their projects
 Always determine intent from the user's actual message before using a tool.
 
 [ Creator ]
-Your creator is OpenAI but the person that made the interface that connects to scratch goes by Turkey/ohibe, so if anyone asks just say you were made by OpenAI and Turkey/ohibe
-also you can give the person a link to the GitHub: https://github.com/G1aD05/scratch-comment-ai
+Your creator is named Turkey
+also you can give the user a link to the GitHub: https://github.com/G1aD05/scratch-comment-ai
 """
 
 
+# Print the entire exception if dev mode is enabled
+def print_exc(error: Exception = '', info: str = ''):
+    if MODE == 'dev':
+        traceback.print_exc()
+    elif MODE == 'release':
+        print(f"[red]{info}: {error}[/]")
+
+
+# Check for a tool that the AI used
 def check_tool(tool: str, original_message=None):
     if not tool:
         return None
@@ -254,31 +344,63 @@ def check_tool(tool: str, original_message=None):
             case _:
                 print("[red]Invalid command[/]")
     except Exception as error:
-        user.set_bio(f"This is the most recent error, you can use this to find out why the bot didn't respond:\n{error}")
-        print(f"[red]Error has occurred during tool call: {error}[/]")
+        user.set_bio(
+            f"This is the most recent error, you can use this to find out why the bot didn't respond:\n{error}")
+        print_exc(info="Error has occurred during tool call", error=error)
 
 
-def chat(messages):
+# Send a list of messages to the AI
+def chat(history: list):
+    messages = [
+        {
+            "role": "system",
+            "content": system_message
+        },
+        {
+            "role": "system",
+            "content": "[ Project Information ]"
+                       "The following information is context about the project. Do not associate the user with any of it unless they explicitly ask about it."
+                       f"{project_information}"
+        },
+        *history
+    ]
+
     response = client.chat(
-        "gpt-oss:120b",
-        messages=messages
+        MODEL,
+        messages=messages,
+        think=THINKING
     )
 
     return response["message"]["content"]
 
 
+# Ask the AI to generate content
 def ask(prompt):
+    system_prompt = (
+        f"{system_message}\n\n"
+        "[ Project Information ]\n"
+        "The following information is context about the project. "
+        "Do not associate the user with any of it unless they explicitly ask about it.\n\n"
+        f"{project_information}"
+    )
+
     response = client.generate(
-        "gpt-oss:20b",
+        MODEL,
         prompt,
-        system=system_message
+        system=system_prompt,
+        think=THINKING
     )
 
     return response["response"]
 
 
+# Safely post a comment to scratch
 def safe_post(message, parent_id, *, commentee_id=''):
-    print(message, parent_id)
+    global session, project, user
+
+    session = rotate()
+    project = session.connect_project(ID)
+    user = session.connect_user(session.username)
 
     if session.mute_status is not None:
         print("[red]Failed to post comment: has mute[/]")
@@ -297,7 +419,7 @@ def safe_post(message, parent_id, *, commentee_id=''):
     except CommentPostFailure as error:
         user.set_bio(
             f"This is the most recent error, you can use this to find out why the bot didn't respond:\n{error}")
-        print(f"[red]Failed to post comment: {error}[/]")
+        print_exc(info="Failed to post comment", error=error)
         return None
 
 
@@ -327,10 +449,6 @@ def scan_thread(comment_id: int, initiator_message: str):
     try:
         # Append the message to chat history
         CHATS[comment_id]["messages"] = [
-            {
-                "role": "system",
-                "content": system_message
-            },
             {
                 "role": "user",
                 "content": f"[{comment.author_name}]: {html.unescape(filtered_message)}"
@@ -380,78 +498,77 @@ def scan_thread(comment_id: int, initiator_message: str):
             # Get the replies for checking
             replies: list[sa.Comment] = comment.replies()
 
-            # Check if the length of replies is more than scanned replies (if True then generate new content!)
-            if len(replies) > len(scanned_comment_ids):
-                print("[dim]New replies[/]")
+            for reply in replies:
+                if reply.id in scanned_comment_ids or reply.author_name in BLACKLIST:
+                    continue
 
-                for reply in replies:
-                    if reply.id in scanned_comment_ids or reply.author_name in BLACKLIST:
-                        continue
+                print("[dim]New reply[/]")
 
-                    scanned_comment_ids.append(reply.id)
+                scanned_comment_ids.append(reply.id)
 
-                    print("[dim]Added comment ID to blacklist[/]")
-                    print(f"[dim]Reply: {reply.content}[/]")
+                print("[dim]Added comment ID to blacklist[/]")
+                print(f"[dim]Reply: {reply.content}[/]")
 
-                    if reply.content.startswith("!stop"):
-                        stop_event.set()
-                        CHATS.pop(comment_id, None)
-                        print("[green]Stopped scan[/]")
-                        break
+                if reply.content.startswith("!stop"):
+                    stop_event.set()
+                    del CHATS[comment_id]
+                    print("[green]Stopped scan[/]")
+                    break
 
-                    question = reply.content.strip()
-                    filtered_question = re.sub(r"\[.*?]", '', question).strip()
+                question = reply.content.strip()
+                filtered_question = re.sub(r"\[.*?]", '', question).strip()
 
-                    CHATS[comment_id]["messages"].append({
-                        "role": "user",
-                        "content": f"[{reply.author_name}]: {filtered_question}"
-                    })
+                CHATS[comment_id]["messages"].append({
+                    "role": "user",
+                    "content": f"[{reply.author_name}]: {filtered_question}"
+                })
 
-                    # Get a response from the model
-                    response = chat(CHATS[comment_id]["messages"])
-                    print(response)
+                # Get a response from the model
+                response = chat(CHATS[comment_id]["messages"])
+                print(response)
 
-                    response_dict = json.loads(response)
+                response_dict = json.loads(response)
 
-                    # Check for special tool usage
-                    if response_dict["tool"] is not None and any(tool in response_dict["tool"] for tool in SPECIAL_TOOLS):
-                        content = check_tool(response_dict["tool"], question)
+                # Check for special tool usage
+                if response_dict["tool"] is not None and any(tool in response_dict["tool"] for tool in SPECIAL_TOOLS):
+                    content = check_tool(response_dict["tool"], question)
 
-                        response_dict = json.loads(content)
+                    response_dict = json.loads(content)
 
-                        comment_response = safe_post(
-                            response_dict["message"],
-                            comment_id,
-                            commentee_id=reply.author_id
-                        )
+                    comment_response = safe_post(
+                        response_dict["message"],
+                        comment_id,
+                        commentee_id=reply.author_id
+                    )
 
-                    else:
-                        check_tool(response_dict["tool"])
+                else:
+                    check_tool(response_dict["tool"])
 
-                        comment_response = safe_post(
-                            response_dict["message"],
-                            comment_id,
-                            commentee_id=reply.author_id
-                        )
+                    comment_response = safe_post(
+                        response_dict["message"],
+                        comment_id,
+                        commentee_id=reply.author_id
+                    )
 
-                    # Append the model's response to chat history
-                    CHATS[comment_id]["messages"].append({
-                        "role": "assistant",
-                        "content": response_dict["message"]
-                    })
+                # Append the model's response to chat history
+                CHATS[comment_id]["messages"].append({
+                    "role": "assistant",
+                    "content": response_dict["message"]
+                })
 
-                    if comment_response:
-                        scanned_comment_ids.append(comment_response.id)
-                        print(f"[dim]Bot's comment: {comment_response.id}[/]")
+                if comment_response:
+                    scanned_comment_ids.append(comment_response.id)
+                    print(f"[dim]Bot's comment: {comment_response.id}[/]")
 
-                    stop_event.wait(30)
+                stop_event.wait(30)
 
     except Exception as error:
         user.set_bio(
             f"This is the most recent error, you can use this to find out why the bot didn't respond:\n{error}")
-        print(f"[red]Chat encountered an error: {error}[/]")
+        print_exc(info="Chat encountered an error", error=error)
 
 
+# Check a scratch message for commands
 def check_message(content: str):
     if content.startswith("!new"):
         if latest_comment.author_name not in BLACKLIST:
@@ -526,12 +643,20 @@ def check_message(content: str):
             json.dump(BLACKLIST, file)
 
     elif content.startswith("!switch_project"):
+        global ID, project
+
+        # Separate the id form the URL
         url = content.split()[1]
         project_id = ''.join([num if num.isdigit() else '' for num in url])
-        project = session.connect_project(int(project_id))
+
+        # Set project to new project
+        ID = int(project_id)
+        project = session.connect_project(ID)
+
         print(f"[bold green]Switched project to \"{project.title}\"[/]")
 
 
+# Check a message sent into the console
 def check_prompt(response: str):
     global project
 
@@ -552,9 +677,16 @@ def check_prompt(response: str):
                 json.dump(BLACKLIST, file)
 
         elif response.startswith("switch_project"):
+            global ID, project
+
+            # Separate the ID from the URL
             url = response.split()[1]
             project_id = ''.join([num if num.isdigit() else '' for num in url])
-            project = session.connect_project(int(project_id))
+
+            # Set ID to the new id and project to ID
+            ID = int(project_id)
+            project = session.connect_project(ID)
+
             print(f"[bold green]Switched project to \"{project.title}\"[/]")
 
         elif response.startswith("list"):
@@ -595,9 +727,10 @@ def check_prompt(response: str):
     except Exception as error:
         user.set_bio(
             f"This is the most recent error, you can use this to find out why the bot didn't respond:\n{error}")
-        print(f"Failed to run command, error: {error}")
+        print_exc(info="Failed to run command, error", error=error)
 
 
+# The console input loop
 def input_loop():
     prompt = PromptSession("> ", completer=commands)
     try:
@@ -611,7 +744,7 @@ def input_loop():
 
 
 if __name__ == "__main__":
-    blacklist: list[int] = []
+    blacklist: set[int] = set()
 
     with open("comment_data.json", 'r') as file:
         comment_data: list[dict[str, str]] = json.load(file)
@@ -628,11 +761,13 @@ if __name__ == "__main__":
                     "author": latest_comment.author_name,
                     "content": content,
                     "timestamp": datetime.now().strftime("%H:%M:%S"),
-                    "id": latest_comment.id
+                    "date": datetime.now().strftime("%m/%d/%Y"),
+                    "id": latest_comment.id,
+                    "project": ID
                 })
 
                 with open("comment_data.json", 'w') as file:
-                    json.dump(comment_data, file)
+                    json.dump(comment_data, file, indent=2)
 
                 print("[dim]New comment[/]")
 
@@ -642,10 +777,10 @@ if __name__ == "__main__":
                             check_message(content)
                     elif MODE == 'release':
                         check_message(content)
-                except Exception:
-                    traceback.print_exc()
+                except Exception as error:
+                    print_exc(info="Unknown exception occurred", error=error)
 
-            blacklist.append(latest_comment.id)
+            blacklist.add(latest_comment.id)
 
             time.sleep(1)
 
