@@ -15,7 +15,7 @@ from prompt_toolkit import PromptSession
 from prompt_toolkit.completion import WordCompleter
 from prompt_toolkit.patch_stdout import patch_stdout
 from rich.console import Console
-from scratchattach import Comment, LoginDataWarning, Session, Project
+from scratchattach import Comment, LoginDataWarning, Session
 from scratchattach.utils.exceptions import CommentPostFailure
 
 
@@ -746,8 +746,9 @@ def input_loop():
 if __name__ == "__main__":
     blacklist: set[int] = set()
 
-    with open("comment_data.json", 'r') as file:
-        comment_data: list[dict[str, str]] = json.load(file)
+    if MODE == 'dev':
+        with open("comment_data.json", 'r') as file:
+            comment_data: list[dict[str, str]] = json.load(file)
 
     Thread(target=input_loop, daemon=True).start()
 
@@ -757,17 +758,18 @@ if __name__ == "__main__":
             content = latest_comment.content
 
             if latest_comment.id not in blacklist:
-                comment_data.append({
-                    "author": latest_comment.author_name,
-                    "content": content,
-                    "timestamp": datetime.now().strftime("%H:%M:%S"),
-                    "date": datetime.now().strftime("%m/%d/%Y"),
-                    "id": latest_comment.id,
-                    "project": ID
-                })
+                if MODE == 'dev':
+                    comment_data.append({
+                        "author": latest_comment.author_name,
+                        "content": content,
+                        "timestamp": datetime.now().strftime("%H:%M:%S"),
+                        "date": datetime.now().strftime("%m/%d/%Y"),
+                        "id": latest_comment.id,
+                        "project": ID
+                    })
 
-                with open("comment_data.json", 'w') as file:
-                    json.dump(comment_data, file, indent=2)
+                    with open("comment_data.json", 'w') as file:
+                        json.dump(comment_data, file, indent=2)
 
                 print("[dim]New comment[/]")
 
