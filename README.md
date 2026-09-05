@@ -48,6 +48,15 @@ Tavily does have a free plan so you don't have to pay for this feature.
 > [!NOTE]
 > The bot can only use one tool per comment
 
+## Commands for the Console
+1. `gen <comment id>` gets the AI to generate a response for that comment then posts it.
+2. `reply <comment id> <content>` allows you to override the bot and reply to someone's comment as the bot.
+3. `list` lists the last 15 comments.
+4. `mode` prints the mode type, **dev** or **release**.
+5. `switch_project <project id>` switches the project the bot monitors.
+6. `stop` stops the bot.
+7. `help` prints a list of commands.
+
 ## Commands the Owner Can Use
 1. switch_project: Switches the project the bot is currently monitoring, args: `project id`
 2. mode: Print which mode the script is currently on, default is `release`
