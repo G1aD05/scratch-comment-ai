@@ -1,6 +1,6 @@
 [project]
 name = "comment-ai"
-version = "1.2.0"
+version = "1.2.2"
 description = "An AI that replies to comments with many features"
 requires-python = ">=3.12"
 dependencies = [
