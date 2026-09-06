@@ -674,6 +674,8 @@ def input_loop():
 
 
 if __name__ == "__main__":
+    __version__ = '1.2.2'
+
     blacklist: set[int] = set()
 
     if MODE == 'dev':
