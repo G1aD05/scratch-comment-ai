@@ -6,7 +6,6 @@ import sys
 import time
 import traceback
 import warnings
-import inspect
 from datetime import datetime
 from pathlib import Path
 from threading import Event, Thread
@@ -705,9 +704,7 @@ if __name__ == "__main__":
                 print("[dim]New comment[/]")
 
                 try:
-                    if MODE == 'dev' and latest_comment.author_name == HOLDER:
-                        check_message(content)
-                    elif MODE == 'release':
+                    if MODE == 'dev' and latest_comment.author_name == HOLDER or MODE == 'release':
                         check_message(content)
                 except Exception as error:
                     print_exc(info="Unknown exception occurred", error=error)
